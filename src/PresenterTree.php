@@ -242,7 +242,6 @@ class PresenterTree
 				$filePattern = Utils\Strings::split(basename($pattern), '~\*~');
 				if (is_dir(dirname($pattern))) {
 					foreach (Utils\Finder::findFiles(basename($pattern))->in(dirname($pattern)) as $view) {
-						dump($view);
 						$views[] = Utils\Strings::replace($view->getFilename(), [
 							'~^' . preg_quote($filePattern[0]) . '~' => '',
 							'~' . preg_quote($filePattern[1]) . '$~' => '',
@@ -285,10 +284,10 @@ class PresenterTree
 			});
 
 			if ($actions) {
-				$tree['byPresenterClass'][$presenter->presenterClass] = array_flip($actions);
+				$tree['byPresenterClass'][$presenter->getPresenterClass()] = array_flip($actions);
 
 				$t =& $tree['byModule'];
-				foreach (Utils\Strings::split($presenter->module, '~:~') as $step) {
+				foreach (Utils\Strings::split($presenter->getModule(), '~:~') as $step) {
 					$t[$step] = isset($t[$step]) ? $t[$step] : [];
 					$t =& $t[$step];
 				}
