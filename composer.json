@@ -24,7 +24,7 @@
 		"nette/di": "~2.3",
 		"nette/caching": "~2.3",
 
-		"trejjam/base-extension": "~0.5.0"
+		"trejjam/base-extension": "~0.5"
 	},
 	"require-dev": {
 		"nette/tester": "@dev",
