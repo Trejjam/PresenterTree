@@ -19,12 +19,12 @@
 		"issues": "https://github.com/Trejjam/PresenterTree/issues"
 	},
 	"require": {
-		"php": ">=5.4",
+		"php": ">=7.1",
 
 		"nette/di": "~2.3",
 		"nette/caching": "~2.3",
 
-		"trejjam/base-extension": "~0.5"
+		"trejjam/base-extension": "~0.7"
 	},
 	"require-dev": {
 		"nette/tester": "@dev",

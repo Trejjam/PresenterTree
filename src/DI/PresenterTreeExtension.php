@@ -1,24 +1,17 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: jam
- * Date: 3.1.16
- * Time: 5:02
- */
+declare(strict_types=1);
 
 namespace Trejjam\PresenterTree\DI;
 
-use Nette,
-	Trejjam;
+use Nette;
+use Trejjam;
 
 class PresenterTreeExtension extends Trejjam\BaseExtension\DI\BaseExtension
 {
 	protected $default = [
 		'cacheNamespace'            => 'presenterTree',
-		'robotLoaderCacheDirectory' => '%tempDir%/cache',
-		'robotLoaderDirectories'    => [
-			'%appDir%',
-		],
+		'robotLoaderCacheDirectory' => 'cache',
+		'robotLoaderDirectories'    => [],
 		'excluded'                  => [
 			'modules'    => [],
 			'presenters' => [],
@@ -35,38 +28,44 @@ class PresenterTreeExtension extends Trejjam\BaseExtension\DI\BaseExtension
 		'presenterInfoFactory' => 'Trejjam\PresenterTree\IPresenterInfoFactory',
 	];
 
+	public function loadConfiguration(bool $validateConfig = TRUE) : void
+	{
+		$this->default['robotLoaderCacheDirectory'] = $this->getContainerBuilder()->parameters['tempDir'] . DIRECTORY_SEPARATOR . $this->default['robotLoaderCacheDirectory'];
+		$this->default['robotLoaderDirectories'][] = $this->getContainerBuilder()->parameters['appDir'];
+
+		parent::loadConfiguration($validateConfig);
+	}
+
 	public function beforeCompile()
 	{
 		parent::beforeCompile();
 
-		$config = $this->createConfig();
-
-		/** @var Nette\DI\ServiceDefinition[] $classes */
-		$classes = $this->getClasses();
-		$classes['cache']
+		/** @var Nette\DI\ServiceDefinition[] $types */
+		$types = $this->getTypes();
+		$types['cache']
 			->setFactory('Nette\Caching\Cache')
-			->setArguments(['@cacheStorage', $config['cacheNamespace']])
+			->setArguments(['@cacheStorage', $this->config['cacheNamespace']])
 			->setAutowired(FALSE);
 
-		$classes['robotLoader']->setArguments(
+		$types['robotLoader']->setArguments(
 			[
-				new Nette\Caching\Storages\FileStorage($config['robotLoaderCacheDirectory']),
+				new Nette\Caching\Storages\FileStorage($this->config['robotLoaderCacheDirectory']),
 			]
 		);
-		foreach ($config['robotLoaderDirectories'] as $v) {
-			$classes['robotLoader']->addSetup('$service->addDirectory(?)', [$v]);
+		foreach ($this->config['robotLoaderDirectories'] as $v) {
+			$types['robotLoader']->addSetup('$service->addDirectory(?)', [$v]);
 		}
 
-		$classes['robotLoader']->setAutowired(FALSE);
+		$types['robotLoader']->setAutowired(FALSE);
 
-		$classes['presenterTree']->setArguments(
+		$types['presenterTree']->setArguments(
 			[
 				$this->prefix('@cache'),
 				$this->prefix('@robotLoader'),
 			]
 		);
 
-		$classes['presenterTree']->addSetup('$service->setExcludedModules(?)', [$config['excluded']['modules']]);
-		$classes['presenterTree']->addSetup('$service->setExcludedPresenters(?)', [$config['excluded']['presenters']]);
+		$types['presenterTree']->addSetup('$service->setExcludedModules(?)', [$this->config['excluded']['modules']]);
+		$types['presenterTree']->addSetup('$service->setExcludedPresenters(?)', [$this->config['excluded']['presenters']]);
 	}
 }
