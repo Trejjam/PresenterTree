@@ -10,18 +10,18 @@ class PresenterTreeExtension extends Trejjam\BaseExtension\DI\BaseExtension
 {
 	protected $default = [
 		'cacheNamespace'            => 'presenterTree',
-		'robotLoaderCacheDirectory' => 'cache',
+		'robotLoaderCacheDirectory' => 'cache/Nette.RobotLoader',
 		'robotLoaderDirectories'    => [],
 		'excluded'                  => [
-			'modules'    => [],
-			'presenters' => [],
+			'module'    => [],
+			'presenter' => [],
 		],
 	];
 
 	protected $classesDefinition = [
-		'presenterTree' => 'Trejjam\PresenterTree\PresenterTree',
-		'robotLoader'   => 'Trejjam\PresenterTree\RobotLoader',
-		'cache'         => 'Nette\Caching\Cache',
+		'presenterTree' => Trejjam\PresenterTree\PresenterTree::class,
+		'robotLoader'   => Trejjam\PresenterTree\RobotLoader::class,
+		'cache'         => Nette\Caching\Cache::class,
 	];
 
 	protected $factoriesDefinition = [
@@ -30,7 +30,13 @@ class PresenterTreeExtension extends Trejjam\BaseExtension\DI\BaseExtension
 
 	public function loadConfiguration(bool $validateConfig = TRUE) : void
 	{
-		$this->default['robotLoaderCacheDirectory'] = $this->getContainerBuilder()->parameters['tempDir'] . DIRECTORY_SEPARATOR . $this->default['robotLoaderCacheDirectory'];
+		$this->default['robotLoaderCacheDirectory'] = implode(
+			DIRECTORY_SEPARATOR,
+			[
+				$this->getContainerBuilder()->parameters['tempDir'],
+				$this->default['robotLoaderCacheDirectory'],
+			]
+		);
 		$this->default['robotLoaderDirectories'][] = $this->getContainerBuilder()->parameters['appDir'];
 
 		parent::loadConfiguration($validateConfig);
@@ -49,7 +55,7 @@ class PresenterTreeExtension extends Trejjam\BaseExtension\DI\BaseExtension
 
 		$types['robotLoader']->setArguments(
 			[
-				new Nette\Caching\Storages\FileStorage($this->config['robotLoaderCacheDirectory']),
+				$this->config['robotLoaderCacheDirectory'],
 			]
 		);
 		foreach ($this->config['robotLoaderDirectories'] as $v) {
@@ -65,7 +71,7 @@ class PresenterTreeExtension extends Trejjam\BaseExtension\DI\BaseExtension
 			]
 		);
 
-		$types['presenterTree']->addSetup('$service->setExcludedModules(?)', [$this->config['excluded']['modules']]);
-		$types['presenterTree']->addSetup('$service->setExcludedPresenters(?)', [$this->config['excluded']['presenters']]);
+		$types['presenterTree']->addSetup('$service->setExcludedModule(?)', [$this->config['excluded']['module']]);
+		$types['presenterTree']->addSetup('$service->setExcludedPresenter(?)', [$this->config['excluded']['presenter']]);
 	}
 }

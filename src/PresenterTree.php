@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 namespace Trejjam\PresenterTree;
 
@@ -12,7 +13,6 @@ use Nette\Utils;
 class PresenterTree
 {
 	const ALL        = TRUE;
-	const DIRECT     = FALSE;
 	const ALL_MODULE = '__all__';
 
 	/**
@@ -35,13 +35,16 @@ class PresenterTree
 	/**
 	 * @var array
 	 */
-	protected $excludedPresenters = [];
+	protected $excludedPresenter = [];
 	/**
 	 * @var array
 	 */
-	protected $excludedModules = [];
+	protected $excludedModule = [];
 
 	protected $isLoaded = FALSE;
+
+	protected $presenterCache = [];
+	protected $actionCache    = [];
 
 	public function __construct(
 		Nette\Caching\Cache $cache,
@@ -53,72 +56,55 @@ class PresenterTree
 		$this->robotLoader = $robotLoader;
 		$this->presenterInfoFactory = $presenterInfoFactory;
 		$this->presenterFactory = $presenterFactory;
-
-		$this->cache->clean([Nette\Caching\Cache::ALL]);
 	}
 
 	protected function load()
 	{
 		if ( !$this->isLoaded) {
-			if ( !$this->isActual()) {
-				$this->cache->save('presenters', $presenters = $this->buildPresenterTree());
-				$this->cache->save('modules', $this->buildModuleTree($presenters));
-				$this->cache->save('actions', $this->buildActionTree($presenters));
-				$this->setActual();
-			}
+			$this->presenterCache = $this->cache->load(
+				'presenters',
+				function () {
+					$presenters = $this->buildPresenterTree();
+
+					$this->cache->save('actions', $this->buildActionTree($presenters));
+
+					return $presenters;
+				}
+			);
+			$this->actionCache = $this->cache->load('actions');
 
 			$this->isLoaded = TRUE;
 		}
 	}
 
-	public function setExcludedPresenters(array $presenters)
+	public function setExcludedPresenter(array $presenters)
 	{
-		$this->excludedPresenters = $presenters;
+		$this->excludedPresenter = $presenters;
 	}
 
-	public function setExcludedModules(array $modules)
+	public function setExcludedModule(array $modules)
 	{
-		$this->excludedModules = $modules;
+		$this->excludedModule = $modules;
 	}
 
-	protected function getHash()
-	{
-		$classes = $this->robotLoader->getIndexedClasses();
-
-		return md5(serialize($classes));
-	}
-
-	/**
-	 * @return bool
-	 */
-	protected function isActual()
-	{
-		if ($this->cache->load('hash') != $this->getHash()) {
-			return FALSE;
-		}
-
-		return TRUE;
-	}
-
-	protected function setActual($isActual = TRUE)
-	{
-		return $this->cache->save('hash', $isActual ? $this->getHash() : NULL);
-	}
-
-	/**
-	 * @return array
-	 */
-	protected function buildPresenterTree()
+	protected function buildPresenterTree() : array
 	{
 		$classes = array_keys($this->robotLoader->getIndexedClasses());
-		$tree = [];
+		$tree = [
+			'all'      => [],
+			'byModule' => [],
+		];
 		$modules = [];
 
-		foreach ($i = new \RegexIterator(new \ArrayIterator($classes), "~.*Presenter$~") as $class) {
+		$iterator = new \RegexIterator(new \ArrayIterator($classes), '~.*Presenter$~');
+		foreach ($iterator as $_class) {
 			$excluded = FALSE;
-			$reflectionClass = new \ReflectionClass($class);
-			foreach ($this->excludedPresenters as $v) {
-				if ($reflectionClass->getName() == $v || is_subclass_of($class, $v)) {
+			$reflectionClass = new \ReflectionClass($_class);
+			foreach ($this->excludedPresenter as $_excludedPresenter) {
+				if (
+					$reflectionClass->getName() === $_excludedPresenter
+					|| is_subclass_of($_class, $_excludedPresenter)
+				) {
 					$excluded = TRUE;
 				}
 			}
@@ -127,35 +113,57 @@ class PresenterTree
 				continue;
 			}
 
-			$nettePath = $this->presenterFactory->unformatPresenterClass($class);
+			$nettePath = $this->presenterFactory->unformatPresenterClass($_class);
 
 			$nettePathArray = explode(':', $nettePath);
 			$presenter = array_pop($nettePathArray);
 			$module = implode(':', $nettePathArray);
 
-			if (in_array($module, $this->excludedModules)) {
+
+			foreach ($this->excludedModule as $_excludedModule) {
+				if (
+					$_excludedModule === $module
+					|| Utils\Strings::startsWith($module, $_excludedModule . ':')
+				) {
+					$excluded = TRUE;
+					break;
+				}
+			}
+
+			if ($excluded) {
 				continue;
 			}
+
 			$modules[$module] = TRUE;
 
-			$presenterInfo = $this->presenterInfoFactory->create($presenter, $module, $class, [$this, 'getPresenterActions']);
+			$presenterInfo = $this->presenterInfoFactory->create($presenter, $module, $_class, [$this, 'getPresenterActions']);
 			$reflection = $presenterInfo->getPresenterReflection();
 
-			if ( !$reflection->isAbstract() && $presenterInfo->isPublic()) {
-				$t =& $tree['byModule'];
+			if (
+				!$reflection->isAbstract()
+				&& $presenterInfo->isPublic()
+			) {
+				$_module =& $tree['byModule'];
+				if (count($nettePathArray) === 0) {
+					$nettePathArray[] = '';
+				}
 				foreach ($nettePathArray as $step) {
-					$t[$step] = isset($t[$step]) ? $t[$step] : [];
-					$t =& $t[$step];
+					$_module[$step] = $_module[$step] ?? [];
+					$_module =& $_module[$step];
 				}
 
-				$t[$presenter] = $presenterInfo;
+				$_module[$presenter] = $presenterInfo;
+				unset($_module);
 
 				$steps = [];
-				if ($module != '') {
+				if ($module !== '') {
 					foreach ($nettePathArray as $step) {
 						$steps[] = $step;
-						$module = substr($this->formatNettePath($steps), 1);
-						$relative = substr($this->formatNettePath(array_diff($nettePathArray, $steps), $presenter), 1);
+						$module = implode(':', $steps);
+						$relative = implode(
+								':',
+								array_diff($nettePathArray, $steps)
+							) . ':' . $presenter;
 
 						$tree['all'][static::ALL_MODULE][$module . ':' . $relative] = $presenterInfo;
 						$tree['all'][$module][$relative] = $presenterInfo;
@@ -170,79 +178,45 @@ class PresenterTree
 
 		ksort($tree['all']);
 		ksort($tree['all'][static::ALL_MODULE]);
-		foreach ($modules as $k => $v) {
-			ksort($tree['all'][$k]);
-		}
-
-
-		return $tree;
-	}
-
-	/**
-	 * @param $presenters
-	 *
-	 * @return array
-	 */
-	protected function buildModuleTree($presenters)
-	{
-		$tree = [];
-
-		$modules = [];
-		/**
-		 * @var string        $fullPath
-		 * @var PresenterInfo $presenter
-		 */
-		foreach ($presenters['all'][static::ALL_MODULE] as $fullPath => $presenter) {
-			if ( !in_array($presenter->getModule(), $modules)) {
-				$modules[] = $presenter->getModule();
-			}
-		}
-
-		foreach ($modules as $module) {
-			$nettePath = explode(':', $module);
-			$module = array_pop($nettePath);
-
-			$t =& $tree['byModule'];
-			foreach ($nettePath as $step) {
-				$t[$step] = isset($t[$step]) ? $t[$step] : [];
-				$t =& $t[$step];
-			}
-
-			$t = is_array($t) ? $t : [];
-			$t[] = $module;
+		foreach (array_keys($modules) as $_moduleName) {
+			ksort($tree['all'][$_moduleName]);
 		}
 
 		return $tree;
 	}
 
-	/**
-	 * @param $presenters
-	 *
-	 * @return array
-	 */
-	protected function buildActionTree($presenters)
+	protected function buildActionTree(array $presenters) : array
 	{
 		$tree = [];
 
-		/**
-		 * @var string        $fullPath
-		 * @var PresenterInfo $presenter
-		 */
 		foreach ($presenters['all'][static::ALL_MODULE] as $fullPath => $presenter) {
+			assert($presenter instanceof PresenterInfo);
+
 			$reflection = $presenter->getPresenterReflection();
 
-			/** @var Nette\Application\UI\Presenter $presenterInstance */
 			$presenterInstance = $this->presenterFactory->createPresenter(
 				$this->presenterFactory->unformatPresenterClass($presenter->getPresenterClass())
 			);
+
+			if ( !($presenterInstance instanceof Nette\Application\UI\Presenter)) {
+				continue;
+			}
+
 			$templateViewPattern = $presenterInstance->formatTemplateFiles();
 
 			$views = [];
 			foreach ($templateViewPattern as $pattern) {
 				$filePattern = Utils\Strings::split(basename($pattern), '~\*~');
 				if (is_dir(dirname($pattern))) {
-					foreach (Utils\Finder::findFiles(basename($pattern))->in(dirname($pattern)) as $view) {
-						$views[] = Utils\Strings::replace($view->getFilename(), [
+					/** @var \SplFileInfo $viewFile */
+					foreach (
+						Utils\Finder::findFiles(
+							basename($pattern)
+						)->in(
+							dirname($pattern)
+						) as $viewFile
+					) {
+						$views[] = Utils\Strings::replace($viewFile->getFilename(), [
 							'~^' . preg_quote($filePattern[0]) . '~' => '',
 							'~' . preg_quote($filePattern[1]) . '$~' => '',
 						]);
@@ -250,126 +224,82 @@ class PresenterTree
 				}
 			}
 
+			$allowed = [];
 			$actions = [];
-			foreach ($views as $view) {
-				$actions[$view] = $fullPath . ':' . lcfirst($view);
+			foreach ($views as $_view) {
+				$view = lcfirst($_view);
+				$actions[$view] = $fullPath . ':' . $view;
+				$allowed[$view] = TRUE;
 			}
 
-			$methods = array_map(function ($method) {
-				return $method->name;
-			}, $reflection->getMethods(Reflection\Method::IS_PUBLIC));
-
-			$methods = array_filter($methods, function ($method) {
-				return in_array(substr($method, 0, 6), ['action', 'render']);
-			});
-
-			$allowed = [];
-			foreach ($methods as $method) {
-				$method = $reflection->getMethod($method);
-				$action = lcfirst(substr($method->name, 6));
-
-				if ( !$method->hasAnnotation('hideInTree')) {
-					if ( !isset($allowed[$action])) {
-						$allowed[$action] = $fullPath . ':' . $action;
-					}
-
+			$presenterMethods = [];
+			foreach (
+				$reflection->getMethods(Reflection\Method::IS_PUBLIC)
+				as $presenterMethod
+			) {
+				if (in_array(
+					substr($presenterMethod->name, 0, 6),
+					['action', 'render']
+				)) {
+					$presenterMethods[$presenterMethod->name] = $presenterMethod;
 				}
-				else {
+			}
+
+			foreach ($presenterMethods as $_presenterMethod) {
+				$action = lcfirst(substr($_presenterMethod->name, 6));
+
+				if ($_presenterMethod->hasAnnotation('hideInTree')) {
 					$allowed[$action] = FALSE;
 				}
+				else {
+					$actions[$action] = $fullPath . ':' . $action;
+					$allowed[$action] = TRUE;
+				}
 			}
 
-			$actions = array_filter(array_merge($actions, $allowed), function ($action) {
-				return (bool)$action;
-			});
+			$allowedActions = array_filter($actions,
+				function (string $action) use ($allowed) {
+					return $allowed[$action];
+				}, ARRAY_FILTER_USE_KEY
+			);
 
-			if ($actions) {
-				$tree['byPresenterClass'][$presenter->getPresenterClass()] = array_flip($actions);
+			if (count($allowedActions) > 0) {
+				$tree['byPresenterClass'][$presenter->getPresenterClass()] = array_flip($allowedActions);
 
-				$t =& $tree['byModule'];
-				foreach (Utils\Strings::split($presenter->getModule(), '~:~') as $step) {
-					$t[$step] = isset($t[$step]) ? $t[$step] : [];
-					$t =& $t[$step];
+				$_module =& $tree['byModule'];
+				foreach (explode(':', $presenter->getModule()) as $step) {
+					$_module[$step] = $_module[$step] ?? [];
+					$_module =& $_module[$step];
 				}
 
-				$t[$presenter->getPresenterName()] = array_flip($actions);
+				$_module[$presenter->getPresenterName()] = array_flip($actions);
+				unset($_module);
+			}
+			else {
+				$tree['byPresenterClass'][$presenter->getPresenterClass()] = [];
 			}
 		}
 
 		return $tree;
 	}
 
-	/**
-	 * @param string $module
-	 *
-	 * @return array
-	 */
-	public function getPresenters($module = self::ALL_MODULE)
+	public function getPresenters(string $module = self::ALL_MODULE) : ?array
 	{
 		$this->load();
 
-		$presenters = $this->cache->load('presenters');
+		foreach ($this->presenterCache['all'][$module] as $presenterInfo) {
+			assert($presenterInfo instanceof PresenterInfo);
 
-		/** @var PresenterInfo $v */
-		foreach ($presenters['all'][$module] as &$v) {
-			$v->setGetActionCallback([$this, 'getPresenterActions']);
+			$presenterInfo->setGetActionCallback([$this, 'getPresenterActions']);
 		}
 
-		return isset($presenters['all'][$module]) ? $presenters['all'][$module] : NULL;
+		return $this->presenterCache['all'][$module] ?? NULL;
 	}
 
-	/**
-	 * @param PresenterInfo $presenter
-	 *
-	 * @return array
-	 */
-	public function getPresenterActions(PresenterInfo $presenter)
+	public function getPresenterActions(PresenterInfo $presenter) : ?array
 	{
 		$this->load();
 
-		return $this->cache->load('actions')['byPresenterClass'][$presenter->getPresenterClass()];
-	}
-
-	/**
-	 * @param string $nettePath
-	 *
-	 * @return array
-	 */
-	public function getModules($nettePath = NULL)
-	{
-		$this->load();
-
-		$nettePath = trim($nettePath, ':');
-
-		if ( !$nettePath) {
-			return array_filter($this->cache->load('modules')['byModule'], function ($item) {
-				return !is_array($item);
-			});
-		}
-
-		$tree = $this->cache->load('modules')['byModule'];
-		foreach (Utils\Strings::split($nettePath, '~:~') as $step) {
-			if ( !isset($tree[$step])) {
-				return NULL;
-			}
-
-			$tree =& $tree[$step];
-		}
-
-		return array_filter($tree, function ($item) {
-			return !is_array($item);
-		});
-	}
-
-
-	/**
-	 * @param array  $steps
-	 * @param string $presenter
-	 *
-	 * @return string
-	 */
-	protected function formatNettePath(array $steps, $presenter = NULL)
-	{
-		return '' . ($steps ? ':' . implode(':', $steps) : NULL) . ($presenter ? ':' . $presenter : NULL);
+		return $this->actionCache['byPresenterClass'][$presenter->getPresenterClass()] ?? NULL;
 	}
 }

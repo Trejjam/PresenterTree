@@ -1,16 +1,10 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: jam
- * Date: 24.2.16
- * Time: 12:30
- */
+declare(strict_types=1);
 
 namespace Trejjam\PresenterTree;
 
-use Nette,
-	App,
-	Trejjam;
+use Nette;
+use Trejjam;
 
 class RobotLoader extends Nette\Loaders\RobotLoader
 {
@@ -18,39 +12,37 @@ class RobotLoader extends Nette\Loaders\RobotLoader
 	 * @var Nette\Caching\IStorage
 	 */
 	protected $cacheStorage;
+	/**
+	 * @var string
+	 */
+	private $tempDirectory;
 
 	protected $classes = NULL;
 
-	public function __construct(Nette\Caching\IStorage $cacheStorage)
+	public function __construct(string $tempDirectory)
 	{
 		parent::__construct();
 
-		$this->cacheStorage = $cacheStorage;
-	}
+		$this->tempDirectory = $tempDirectory;
 
-	public function getClasses()
-	{
-		if (is_null($this->classes)) {
-			$this->setCacheStorage($this->cacheStorage);
-
-			$this->classes = $this->getCache()->load($this->getKey());
-		}
-
-		return $this->classes;
+		$this->setTempDirectory($this->tempDirectory);
 	}
 
 	/**
 	 * @return array of class => filename
 	 */
-	public function getIndexedClasses()
+	public function getIndexedClasses() : array
 	{
-		$res = [];
-		foreach ($this->getClasses() as $info) {
-			if (is_array($info)) {
-				$res[$info['orig']] = $info['file'];
-			}
+		$classes = parent::getIndexedClasses();
+
+		if (count($classes) === 0) {
+			$loadCache = new \ReflectionMethod(Nette\Loaders\RobotLoader::class, 'loadCache');
+			$loadCache->setAccessible(TRUE);
+			$loadCache->invoke($this);
+
+			$classes = parent::getIndexedClasses();
 		}
 
-		return $res;
+		return $classes;
 	}
 }

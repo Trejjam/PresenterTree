@@ -1,14 +1,8 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: jam
- * Date: 24.2.16
- * Time: 11:19
- */
+declare(strict_types=1);
 
 namespace Trejjam\PresenterTree;
 
-use Nette;
 use Trejjam;
 use Nette\Reflection;
 
@@ -42,14 +36,12 @@ class PresenterInfo
 	 */
 	protected $actions = NULL;
 
-	/**
-	 * @param string   $presenter
-	 * @param string   $module
-	 * @param string   $class
-	 * @param callable $getActionCallback
-	 */
-	public function __construct($presenter, $module, $class, callable $getActionCallback)
-	{
+	public function __construct(
+		string $presenter,
+		string $module,
+		string $class,
+		callable $getActionCallback
+	) {
 		$this->presenter = $presenter;
 		$this->module = $module;
 		$this->class = $class;
@@ -61,28 +53,19 @@ class PresenterInfo
 		$this->getActionCallback = $getActionCallback;
 	}
 
-	/**
-	 * @return bool
-	 */
-	public function isPublic()
+	public function isPublic() : bool
 	{
 		$ref = $this->getPresenterReflection();
 
 		return !$ref->hasAnnotation('hideInTree');
 	}
 
-	/**
-	 * @return Reflection\ClassType
-	 */
-	public function getPresenterReflection()
+	public function getPresenterReflection() : Reflection\ClassType
 	{
 		return new Reflection\ClassType($this->getPresenterClass());
 	}
 
-	/**
-	 * @return array
-	 */
-	public function getActions()
+	public function getActions() : array
 	{
 		if ($this->actions === NULL) {
 			$this->actions = call_user_func_array($this->getActionCallback, [$this]);
@@ -91,38 +74,27 @@ class PresenterInfo
 		return $this->actions;
 	}
 
-	/**
-	 * @param bool $full
-	 *
-	 * @return string
-	 */
-	public function getPresenterName($full = FALSE)
+	public function getPresenterName(bool $full = FALSE) : string
 	{
 		return ($full ? ':' . $this->module . ':' : NULL) . $this->presenter;
 	}
 
-	/**
-	 * @return string
-	 */
-	public function getPresenterClass()
+	public function getPresenterClass() : string
 	{
 		return $this->class;
 	}
 
-	/**
-	 * @return string
-	 */
-	public function getModule()
+	public function getModule() : string
 	{
 		return $this->module;
 	}
 
-	public function __toString()
+	public function __toString() : string
 	{
 		return $this->getPresenterName(TRUE);
 	}
 
-	public function __sleep()
+	public function __sleep() : array
 	{
 		return [
 			'presenter',

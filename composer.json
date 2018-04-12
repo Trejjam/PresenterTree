@@ -21,7 +21,7 @@
 	"require": {
 		"php": ">=7.1",
 
-		"nette/di": "~2.3",
+		"nette/robot-loader": "~3.0",
 		"nette/caching": "~2.3",
 
 		"trejjam/base-extension": "~0.7"
@@ -39,10 +39,7 @@
 	"autoload": {
 		"psr-4": {
 			"Trejjam\\PresenterTree\\": "src/"
-		},
-		"classmap": [
-			"src/exceptions.php"
-		]
+		}
 	},
 	"extra": {
 		"branch-alias": {
